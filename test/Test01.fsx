@@ -11,12 +11,13 @@ open FParsec
 
 open FSharp.Core
 
-#load @"..\src\DirListing\DirParser.fs"
-open DirListing.DirParser
+#load @"..\src\DirListing\Base.fs"
+#load @"..\src\DirListing\PowershellDirParser.fs"
+open DirListing
 
 
 let readDirListing01 () = 
     let input = Path.Combine(__SOURCE_DIRECTORY__, "..\data", "project-sample.dir.txt")
     // DateTime is "30/07/2018     15:20"
-    let dateTime = { DateParser = dateDDMMYear; TimeParser = time24HHMM }
-    readDirListing dateTime input
+    let dateTimeConfig = { DateParser = dateDDMMYear; TimeParser = time24HHMM }
+    readDirListing dateTimeConfig input

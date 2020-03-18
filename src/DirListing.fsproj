@@ -5,7 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="DirListing\DirParser.fs" />
+    <Compile Include="DirListing\Base.fs" />
+    <Compile Include="DirListing\PowershellDirParser.fs" />
   </ItemGroup>
 
   <ItemGroup>
