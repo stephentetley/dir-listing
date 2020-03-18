@@ -17,4 +17,6 @@ open DirListing.DirParser
 
 let readDirListing01 () = 
     let input = Path.Combine(__SOURCE_DIRECTORY__, "..\data", "project-sample.dir.txt")
-    readDirListing input
+    // DateTime is "30/07/2018     15:20"
+    let dateTime = { DateParser = dateDDMMYear; TimeParser = time24HHMM }
+    readDirListing dateTime input

@@ -51,14 +51,37 @@ module DirParser =
           FolderContents : DirListingRow list }
         
 
+    type DateStamp = 
+        { Day: int
+          Mon: int
+          Year: int}
 
+    type TimeStamp = 
+        { Hrs: int 
+          Mins: int }
 
+    let makeDateTime (ds: DateStamp) (ts: TimeStamp) : DateTime = 
+        try 
+            new DateTime(year = ds.Year, month = ds.Mon, day  = ds.Day, hour = ts.Hrs, minute = ts.Mins, second= 0)
+        with
+        | ex -> 
+            printfn "%O %O" ds ts
+            reraise ()
 
-    let makeDateTime (year:int) (month:int) (day:int) (hour:int) (minute:int) (second:int) : DateTime = 
-        new DateTime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
-
-
+    type Config = 
+        { DateParser: Parser<DateStamp, unit> 
+          TimeParser: Parser<TimeStamp, unit>
+        }
     
+    type DateTimeReader = Parser<DateTime, unit>
+
+    let private dateTimeReader (config: Config) : DateTimeReader = 
+        pipe2 config.DateParser
+              config.TimeParser
+              makeDateTime
+
+    type DiretoryParser<'ans> = DateTimeReader -> Parser<'ans, unit>
+
     // *************************************
     // PARSER
 
@@ -87,15 +110,54 @@ module DirParser =
             return name1.Trim()
             }
 
+    type Period = AM | PM
 
-    // Note this is UK centric    
-    let private pDateTime : Parser<DateTime,unit> = 
-        pipe5   pint32 
+    let pPeriod : Parser<Period, unit> = 
+        let am = keyword "AM" >>. preturn AM
+        let pm = keyword "PM" >>. preturn PM
+        choice [am; pm]
+
+    let time12HHMM : Parser<TimeStamp, unit> = 
+        pipe3 pint32 
+                (pchar ':' >>. symbol pint32)
+                (symbol pPeriod)
+                (fun th tm merid -> 
+                    let hrs = if merid = PM then (th + 12) % 24  else th
+                    { Hrs = hrs; Mins = tm })
+
+    let time24HHMM : Parser<TimeStamp, unit> = 
+        pipe2 pint32 
+                (pchar ':' >>. symbol pint32)
+                (fun th tm -> { Hrs = th; Mins = tm })
+
+    let dateDDMMYear : Parser<DateStamp, unit> = 
+        pipe3   pint32 
                 (pchar '/' >>. pint32) 
                 (pchar '/' >>. symbol pint32) 
-                pint32 
-                (pchar ':' >>. pint32)
-                (fun dd dm dy th tm -> makeDateTime dy dm dd th tm 0)
+                (fun dd mm yy -> { Day = dd; Mon = mm; Year = yy })
+
+    let dateMMDDYear : Parser<DateStamp, unit> = 
+        pipe3   pint32 
+                (pchar '/' >>. pint32) 
+                (pchar '/' >>. symbol pint32) 
+                (fun mm dd yy -> { Day = dd; Mon = mm; Year = yy })
+
+    //// Note this is UK centric    
+    //let pUkDateTime : Parser<DateTime,unit> = 
+    //    pipe5   pint32 
+    //            (pchar '/' >>. pint32) 
+    //            (pchar '/' >>. symbol pint32) 
+    //            pint32 
+    //            (pchar ':' >>. pint32)
+    //            (fun dd dm dy th tm -> makeDateTime dy dm dd th tm 0)
+
+    //let pUsDateTime : Parser<DateTime,unit> = 
+    //    pipe5   pint32 
+    //            (pchar '/' >>. pint32) 
+    //            (pchar '/' >>. symbol pint32) 
+    //            pint32 
+    //            (pchar ':' >>. pint32)
+    //            (fun dm dd dy th tm -> makeDateTime dy dm dd th tm 0)
     
     let private pMode : Parser<string,unit> = many1Chars (lower <|> pchar '-') 
 
@@ -118,50 +180,55 @@ module DirParser =
 
 
     let private pFolder (pathTo: string) 
-                        (mode: string) : Parser<DirListingRow, unit> = 
-        parse { 
-            let! timeStamp = symbol pDateTime 
-            let! name = pName 
-            return (FolderRow (name, { Mode = mode; ModificationTime = timeStamp}, pathTo))
-            }
+                        (mode: string) : DiretoryParser<DirListingRow> = 
+        fun pDateTime -> 
+            parse { 
+                let! timeStamp = pDateTime 
+                let! name = pName 
+                return (FolderRow (name, { Mode = mode; ModificationTime = timeStamp}, pathTo))
+                }
 
-    let private pFile (pathTo:string) (mode:string) : Parser<DirListingRow, unit> = 
-        parse { 
-            let! timeStamp = symbol pDateTime
-            let! size = symbol pint64
-            let! name = pName 
-            return (FileRow (name, { Mode = mode; ModificationTime = timeStamp}, size, pathTo))
-            }
+    let private pFile (pathTo:string) (mode:string) : DiretoryParser<DirListingRow> = 
+        fun pDateTime -> 
+            parse { 
+                let! timeStamp = pDateTime
+                let! size = symbol pint64
+                let! name = pName 
+                return (FileRow (name, { Mode = mode; ModificationTime = timeStamp}, size, pathTo))
+                }
 
     // Note - file store is flat at parse time (represented as a "Row")
     // It needs postprocessing to build.
-    let private pRow (pathTo:string) : Parser<DirListingRow,unit> = 
-        let parseK mode = 
-            if isDir mode then pFolder pathTo mode else pFile pathTo mode
-        (symbol pMode) >>= parseK
+    let private pRow (pathTo:string) : DiretoryParser<DirListingRow> = 
+        fun pDateTime -> 
+            let parseK mode = 
+                if isDir mode then pFolder pathTo mode pDateTime else pFile pathTo mode pDateTime
+            (symbol pMode) >>= parseK
 
 
 
 
 
-    let private pDirFolder : Parser<DirListingFolder, unit> = 
-        parse { 
-            let! parent = (spaces >>. pDirectoryDirective) 
-            do! emptyLine
-            do! emptyLine
-            let! _ = pHeadings .>> newline
-            let! rows = many1 (pRow parent)
-            return { Path = parent; FolderContents = rows }
-            }
+    let private pDirFolder : DiretoryParser<DirListingFolder> = 
+        fun pDateTime -> 
+            parse { 
+                let! parent = (spaces >>. pDirectoryDirective) 
+                do! emptyLine
+                do! emptyLine
+                let! _ = pHeadings .>> newline
+                let! rows = many1 (pRow parent pDateTime)
+                return { Path = parent; FolderContents = rows }
+                }
 
 
 
-    let private pListing : Parser<DirListingFolder list,unit> = 
-        many (pDirFolder .>> spaces)
+    let private pListing : DiretoryParser<DirListingFolder list> = 
+        fun pDateTime -> many (pDirFolder pDateTime .>> spaces)
 
-    let readDirListing (inputPath:string) : Result<DirListingFolder list, string> = 
+    let readDirListing (config: Config) (inputPath:string) : Result<DirListingFolder list, string> = 
         let source = File.ReadAllText(inputPath)
-        match runParserOnString pListing () inputPath source with
+        let dateTimeParser = dateTimeReader config
+        match runParserOnString (pListing dateTimeParser) () inputPath source with
         | Success(a,_,_) -> Result.Ok a
         | Failure(s,_,_) -> Result.Error s
 
