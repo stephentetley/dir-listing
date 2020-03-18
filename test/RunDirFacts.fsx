@@ -35,13 +35,15 @@ let facts01 () =
     let dtConfig = { DateParser = dateMMDDYear; TimeParser = time12HHMM }
     readDirListing dtConfig input
 
-let printNames (ans : Result<DirListingFolder list, string>): Unit = 
-    match ans with
-    | Ok xs -> xs |> List.iter (fun (x:DirListingFolder) -> printfn "%s" x.FolderName)
-    | Error msg -> printfn "%s" msg
 
+let genSurveyFacts01 () = 
+    let input = @"G:\work\Projects\edm2\march_18_2020_file_logs\cso_sps-dir.txt"
+    // DateTime is "11/28/2019   9:23 AM"
+    let dtConfig = { DateParser = dateMMDDYear; TimeParser = time12HHMM }
+    let outpath = outputPath "surveys.csv"
+    generateSurveyFacts dtConfig input outpath
 
-let temp01 () = 
+let genSiteWorkFacts01 () = 
     let input = @"G:\work\Projects\edm2\march_18_2020_file_logs\cso_sps-dir.txt"
     // DateTime is "11/28/2019   9:23 AM"
     let dtConfig = { DateParser = dateMMDDYear; TimeParser = time12HHMM }
