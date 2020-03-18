@@ -4,53 +4,17 @@
 
 namespace DirListing
 
-module DirParser =
+[<AutoOpen>]
+module PowershellDirParser =
 
     open System
     open System.IO 
 
     open FParsec
 
-
+    open DirListing.Base
     
-    type Name = string
-    type FilePath = string
-    type Size = int64
-
-
-    // Mode is not currently interpreted
-    type FsoProperties = 
-        { Mode : string
-          ModificationTime : DateTime
-        }
- 
-    type DirListingRow = 
-        | FolderRow of name : Name * props: FsoProperties * FilePath
-        | FileRow of name : Name * props : FsoProperties * length : Size * FilePath
-        member x.Name 
-            with get () : string = 
-                match x with
-                | FolderRow(name,_,_) -> name
-                | FileRow(name,_,_,_) -> name
-
-        member x.Properties 
-            with get () : FsoProperties = 
-                match x with
-                | FolderRow(_,props,_) -> props
-                | FileRow(_,props,_,_) -> props
-
-        member x.Path
-            with get () : string = 
-                match x with
-                | FolderRow(_,_,path) -> path
-                | FileRow(_,_,_,path) -> path
-
-
-    type DirListingFolder = 
-        { Path : FilePath 
-          FolderContents : DirListingRow list }
-        
-
+    
     type DateStamp = 
         { Day: int
           Mon: int
@@ -68,14 +32,14 @@ module DirParser =
             printfn "%O %O" ds ts
             reraise ()
 
-    type Config = 
+    type DateTimeConfig = 
         { DateParser: Parser<DateStamp, unit> 
           TimeParser: Parser<TimeStamp, unit>
         }
     
     type DateTimeReader = Parser<DateTime, unit>
 
-    let private dateTimeReader (config: Config) : DateTimeReader = 
+    let private dateTimeReader (config: DateTimeConfig) : DateTimeReader = 
         pipe2 config.DateParser
               config.TimeParser
               makeDateTime
@@ -180,26 +144,26 @@ module DirParser =
 
 
     let private pFolder (pathTo: string) 
-                        (mode: string) : DiretoryParser<DirListingRow> = 
+                        (mode: string) : DiretoryParser<DirListingItem> = 
         fun pDateTime -> 
             parse { 
                 let! timeStamp = pDateTime 
                 let! name = pName 
-                return (FolderRow (name, { Mode = mode; ModificationTime = timeStamp}, pathTo))
+                return (DirectoryItem (name, { Mode = mode; ModificationTime = timeStamp}, pathTo))
                 }
 
-    let private pFile (pathTo:string) (mode:string) : DiretoryParser<DirListingRow> = 
+    let private pFile (pathTo:string) (mode:string) : DiretoryParser<DirListingItem> = 
         fun pDateTime -> 
             parse { 
                 let! timeStamp = pDateTime
                 let! size = symbol pint64
                 let! name = pName 
-                return (FileRow (name, { Mode = mode; ModificationTime = timeStamp}, size, pathTo))
+                return (FileItem (name, { Mode = mode; ModificationTime = timeStamp}, size, pathTo))
                 }
 
     // Note - file store is flat at parse time (represented as a "Row")
     // It needs postprocessing to build.
-    let private pRow (pathTo:string) : DiretoryParser<DirListingRow> = 
+    let private pRow (pathTo:string) : DiretoryParser<DirListingItem> = 
         fun pDateTime -> 
             let parseK mode = 
                 if isDir mode then pFolder pathTo mode pDateTime else pFile pathTo mode pDateTime
@@ -225,7 +189,7 @@ module DirParser =
     let private pListing : DiretoryParser<DirListingFolder list> = 
         fun pDateTime -> many (pDirFolder pDateTime .>> spaces)
 
-    let readDirListing (config: Config) (inputPath:string) : Result<DirListingFolder list, string> = 
+    let readDirListing (config: DateTimeConfig) (inputPath:string) : Result<DirListingFolder list, string> = 
         let source = File.ReadAllText(inputPath)
         let dateTimeParser = dateTimeReader config
         match runParserOnString (pListing dateTimeParser) () inputPath source with

@@ -52,7 +52,9 @@ module Base =
                 // Folder name is the rightmost element of the Path (.Net Path module considers this a file)
                 Path.GetFileName x.Path
         
-    
+    let parentDirectory(path: string): string = 
+        new FileInfo(path) 
+            |> fun x -> x.Directory.Name
 
     let pathSegments(path: string) : string list = 
         let rec work (info: DirectoryInfo) cont = 

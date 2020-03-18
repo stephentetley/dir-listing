@@ -6,9 +6,12 @@
 
   <ItemGroup>
     <None Include="Test01.fsx" />
-    <None Include="DirFacts.fsx" />
+    <Compile Include="DirFacts.fs" />
+    <None Include="RunDirFacts.fsx" />
   </ItemGroup>
 
-  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\src\DirListing.fsproj" />
+  </ItemGroup>
 
 </Project>
